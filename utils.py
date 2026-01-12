@@ -1,5 +1,5 @@
 import torch
-from class_defination import GraphData
+from class_definition import GraphData
 
 def pyg_to_graphdata( #check this
     pyg_graph_list,
