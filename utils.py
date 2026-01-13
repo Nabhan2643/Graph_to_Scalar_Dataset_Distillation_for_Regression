@@ -1,7 +1,7 @@
 import torch
 from class_definition import GraphData
 
-def pyg_to_graphdata( #check this
+def pyg_to_graphdata( 
     pyg_graph_list,
     target_key="stiffness",
     requires_grad=False

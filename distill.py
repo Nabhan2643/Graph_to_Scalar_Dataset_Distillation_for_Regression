@@ -104,9 +104,14 @@ def distill(
             retain_graph=True
         )
 
+        # grad_phi = torch.autograd.grad(
+        #     L_real,
+        #     mlp.parameters()
+        # )
         grad_phi = torch.autograd.grad(
             L_real,
-            mlp.parameters()
+            mlp.parameters(),
+            allow_unused=True
         )
 
         # --------------------------------------------------
@@ -117,8 +122,13 @@ def distill(
                 g.X -= lr_X * gx
                 g.y -= lr_y * gy
 
+            # for p, gp in zip(mlp.parameters(), grad_phi):
+            #     p -= lr_mlp * gp
+    
             for p, gp in zip(mlp.parameters(), grad_phi):
-                p -= lr_mlp * gp
+                if gp is not None:
+                    p -= lr_mlp * gp
+
 
     return train_syn_list, mlp, gnn
 

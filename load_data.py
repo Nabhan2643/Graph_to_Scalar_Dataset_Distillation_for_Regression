@@ -12,7 +12,7 @@ def seed_worker(worker_id):
 
 def load_train_data(data_path, device):
     
-    train_loader = torch.load(os.path.join(data_path, 'data', 'train_dataset.pt'), weights_only=False, map_location=device)
+    train_loader = torch.load(os.path.join(data_path), weights_only=False, map_location=device)
     individual_list_of_training_graphs = []
 
     for batch in train_loader:
@@ -25,7 +25,7 @@ def load_train_data(data_path, device):
 
 def load_test_data(data_path, device):
     
-    test_loader = torch.load(os.path.join(data_path, 'data', 'test_dataset_2.pt'), weights_only=False, map_location=device)
+    test_loader = torch.load(os.path.join(data_path), weights_only=False, map_location=device)
     individual_list_of_test_graphs = []
 
     for batch in test_loader:

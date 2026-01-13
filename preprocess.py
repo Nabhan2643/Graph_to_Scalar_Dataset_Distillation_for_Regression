@@ -18,7 +18,7 @@ def preprocess_features(X, strategy='mean', scaler=None, device = "cpu"):
     return torch.tensor(X_scaled, dtype=torch.float32, device=device), scaler
 
 
-def preprocess_graph_list_inplace(graph_list, strategy='mean', device='cuda'):
+def preprocess_graph_list_inplace(graph_list, strategy='mean', device='cpu'):
     
     x_all = torch.cat([g.x.to(device) for g in graph_list], dim=0)
 
