@@ -9,6 +9,7 @@ import os
 import random
 import torch
 
+from evaluate import detach_syn_data, evaluate, train_gnn_on_syn
 from load_data import load_test_data, load_train_data
 from losses import l_q, l_real, l_syn
 from preprocess import preprocess_graph_list_inplace
@@ -110,31 +111,42 @@ torch.save(test_data, os.path.join(save_dir, "test_graphdata.pt"))
 print("✔ Converted & saved GraphData")
 
 # ============================================================
-# 7. INITIALIZE SYNTHETIC DATA
+# 7. INITIALIZE SYNTHETIC DATA (SEEDED ONLY HERE)
 # ============================================================
+
+syn_gen = torch.Generator(device=device)
+syn_gen.manual_seed(CFG["seed"])
 
 feat_dim = train_real[0].X.shape[1]
 
 train_syn = []
 for _ in range(CFG["syn_graphs"]):
     X_syn = torch.randn(
-        CFG["syn_nodes"], feat_dim,
-        device=device, requires_grad=True
-    )
-
-    A_syn = torch.zeros(
-        CFG["syn_nodes"], CFG["syn_nodes"],
-        device=device
+        CFG["syn_nodes"],
+        feat_dim,
+        device=device,
+        generator=syn_gen,
+        requires_grad=True
     )
 
     y_syn = torch.randn(
-        1, device=device, requires_grad=True
+        1,
+        device=device,
+        generator=syn_gen,
+        requires_grad=True
+    )
+
+    A_syn = torch.zeros(
+        CFG["syn_nodes"],
+        CFG["syn_nodes"],
+        device=device
     )
 
     from class_definition import GraphData
     train_syn.append(
         GraphData(X=X_syn, A=A_syn, y=y_syn, requires_grad=True)
     )
+
 
 print("✔ Synthetic graphs initialized")
 
@@ -207,22 +219,20 @@ print("✔ Distilled synthetic data and models saved")
 # ============================================================
 # 11. EVALUATION ON TEST DATA
 # ============================================================
+train_syn_eval = detach_syn_data(train_syn)
 
-@torch.no_grad()
-def evaluate(gnn, data_list):
-    gnn.eval()
-    preds, ys = [], []
+gnn_eval = GraphSAGE(
+    in_dim=feat_dim,
+    hidden_dim=CFG["sage_hidden_dim"]
+).to(device)
 
-    for g in data_list:
-        pred = gnn(g.X, g.A)
-        preds.append(pred.item())
-        ys.append(g.y.item())
+gnn_eval = train_gnn_on_syn(
+    gnn=gnn_eval,
+    syn_data=train_syn_eval,
+    epochs=300,
+    lr=1e-2
+)
 
-    preds = torch.tensor(preds)
-    ys = torch.tensor(ys)
+test_mse = evaluate(gnn_eval, test_data)
+print(f"✔ Test MSE (trained on synthetic data): {test_mse:.6f}")
 
-    mse = torch.mean((preds - ys) ** 2)
-    return mse.item()
-
-test_mse = evaluate(gnn, test_data)
-print(f"✔ Test MSE: {test_mse:.6f}")
