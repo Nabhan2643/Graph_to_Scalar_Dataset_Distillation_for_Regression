@@ -128,7 +128,8 @@ def distill(
             for p, gp in zip(mlp.parameters(), grad_phi):
                 if gp is not None:
                     p -= lr_mlp * gp
-
+    
+        print(f"Epoch {epoch} - Completed")
 
     return train_syn_list, mlp, gnn
 

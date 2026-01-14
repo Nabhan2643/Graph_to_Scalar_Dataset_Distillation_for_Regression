@@ -6,14 +6,13 @@
 # -> DISTILL -> EVALUATE
 
 import os
-import random
 import torch
 
 from evaluate import detach_syn_data, evaluate, train_gnn_on_syn
 from load_data import load_test_data, load_train_data
 from losses import l_q, l_real, l_syn
 from preprocess import preprocess_graph_list_inplace
-from utils import pyg_to_graphdata
+from utils import pyg_to_graphdata, save_scatter_preds_vs_targets
 from distill import distill
 from models import PGE, GraphSAGE
 
@@ -35,20 +34,20 @@ CFG = dict(
     pge_layers=3,
 
     # distillation
-    epochs=200,
-    batch_size=8,
-    Q=3,
-    T=5,
+    epochs=500,
+    batch_size=32,
+    Q=30,
+    T=150,
 
     # learning rates
     lr_gnn=1e-2,
-    lr_X=1e-2,
-    lr_y=1e-2,
+    lr_X=0.0025,
+    lr_y=0.00025,
     lr_mlp=1e-3,
 
     # loss weights
-    lambda_X=1.0,
-    lambda_Y=1.0,
+    lambda_X=0.001,
+    lambda_Y=0.001,
 
     seed=42
 )
@@ -105,6 +104,7 @@ test_data = pyg_to_graphdata(
     requires_grad=False
 )
 
+# NOTE: No need to resave if already exists use that.
 torch.save(train_real, os.path.join(save_dir, "training_graphdata.pt"))
 torch.save(test_data, os.path.join(save_dir, "test_graphdata.pt"))
 
@@ -233,6 +233,21 @@ gnn_eval = train_gnn_on_syn(
     lr=1e-2
 )
 
-test_mse = evaluate(gnn_eval, test_data)
+train_real_mse, train_preds, train_ys = evaluate(gnn_eval, train_real)
+save_scatter_preds_vs_targets(
+    train_preds,
+    train_ys,
+    save_path="saved_data/plots/train_real_scatter.png",
+    title="Synthetic-trained GNN on Test Data"
+)
+print(f"✔ Train Real MSE (trained on synthetic data): {train_real_mse:.6f}")
+
+test_mse, test_preds, test_ys = evaluate(gnn_eval, test_data)
+save_scatter_preds_vs_targets(
+    test_preds,
+    test_ys,
+    save_path="saved_data/plots/test_scatter.png",
+    title="Synthetic-trained GNN on Test Data"
+)
 print(f"✔ Test MSE (trained on synthetic data): {test_mse:.6f}")
 

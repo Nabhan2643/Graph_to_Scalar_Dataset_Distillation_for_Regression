@@ -1,5 +1,7 @@
 import torch
 from class_definition import GraphData
+import matplotlib.pyplot as plt
+import os
 
 def pyg_to_graphdata( 
     pyg_graph_list,
@@ -43,3 +45,42 @@ def pyg_to_graphdata(
         )
 
     return graphdata_list
+
+def save_scatter_preds_vs_targets(
+    preds: torch.Tensor,
+    ys: torch.Tensor,
+    save_path: str,
+    title: str = "Predictions vs Ground Truth",
+    xlabel: str = "Ground Truth",
+    ylabel: str = "Predictions"
+):
+    """
+    Save scatter plot of predicted vs true values.
+
+    Args:
+        preds (torch.Tensor): shape (N,)
+        ys (torch.Tensor): shape (N,)
+        save_path (str): full path including filename (.png, .pdf, etc.)
+    """
+
+    preds = preds.detach().cpu()
+    ys = ys.detach().cpu()
+
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    plt.figure()
+    plt.scatter(ys, preds)
+
+    # y = x reference line
+    min_val = min(ys.min().item(), preds.min().item())
+    max_val = max(ys.max().item(), preds.max().item())
+    plt.plot([min_val, max_val], [min_val, max_val])
+
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()   # VERY important to avoid memory leaks

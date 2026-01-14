@@ -15,7 +15,7 @@ def evaluate(gnn, data_list):
     ys = torch.tensor(ys)
 
     mse = torch.mean((preds - ys) ** 2)
-    return mse.item()
+    return mse.item(), preds, ys
 
 def train_gnn_on_syn(
     gnn,
