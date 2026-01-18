@@ -10,7 +10,7 @@ import numpy as np
 
 class PGE(nn.Module):
 
-    def __init__(self, nfeat, nnodes, nhid=128, nlayers=3, device=None, args=None):
+    def __init__(self, nfeat, nhid=128, nlayers=3, device=None, args=None):
         super(PGE, self).__init__()
 
         self.layers = nn.ModuleList([])
@@ -22,17 +22,20 @@ class PGE(nn.Module):
             self.bns.append(nn.BatchNorm1d(nhid))
         self.layers.append(nn.Linear(nhid, 1))
 
-        edge_index = np.array(list(product(range(nnodes), range(nnodes))))
-        self.edge_index = edge_index.T
-        self.nnodes = nnodes
+        
+        # edge_index = np.array(list(product(range(nnodes), range(nnodes))))
+        # self.edge_index = edge_index.T
+        # self.nnodes = nnodes
         self.device = device
         self.reset_parameters()
-        self.cnt = 0
-        self.args = args
-        self.nnodes = nnodes
+        # self.cnt = 0
+        # self.args = args
+        # self.nnodes = nnodes
 
     def forward(self, x):
-        edge_index = self.edge_index
+        nnodes = x.shape[0]
+        idx = torch.arange(nnodes, device=x.device)
+        edge_index = torch.cartesian_prod(idx, idx).T
         edge_embed = torch.cat([x[edge_index[0]],
                 x[edge_index[1]]], axis=1)
         for ix, layer in enumerate(self.layers):
@@ -41,7 +44,7 @@ class PGE(nn.Module):
                 edge_embed = self.bns[ix](edge_embed)
                 edge_embed = F.relu(edge_embed)
 
-        adj = edge_embed.reshape(self.nnodes, self.nnodes)
+        adj = edge_embed.reshape(nnodes, nnodes)
 
         adj = (adj + adj.T)/2
         adj = torch.sigmoid(adj)

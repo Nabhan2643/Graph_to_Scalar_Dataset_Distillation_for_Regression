@@ -54,33 +54,22 @@ def save_scatter_preds_vs_targets(
     xlabel: str = "Ground Truth",
     ylabel: str = "Predictions"
 ):
-    """
-    Save scatter plot of predicted vs true values.
-
-    Args:
-        preds (torch.Tensor): shape (N,)
-        ys (torch.Tensor): shape (N,)
-        save_path (str): full path including filename (.png, .pdf, etc.)
-    """
-
-    preds = preds.detach().cpu()
-    ys = ys.detach().cpu()
+    preds = preds.detach().cpu().view(-1)
+    ys = ys.detach().cpu().view(-1)
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    plt.figure()
-    plt.scatter(ys, preds)
+    plt.figure(figsize=(6, 6))
+    plt.scatter(ys, preds, alpha=0.7)
 
-    # y = x reference line
     min_val = min(ys.min().item(), preds.min().item())
     max_val = max(ys.max().item(), preds.max().item())
-    plt.plot([min_val, max_val], [min_val, max_val])
+    plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2)
 
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
     plt.grid(True)
-
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
-    plt.close()   # VERY important to avoid memory leaks
+    plt.close()

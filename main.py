@@ -15,7 +15,7 @@ from preprocess import preprocess_graph_list_inplace
 from utils import pyg_to_graphdata, save_scatter_preds_vs_targets
 from distill import distill
 from models import PGE, GraphSAGE
-
+from train_mlp import train_pge
 # ============================================================
 # 1. GLOBAL CONFIG / HYPERPARAMETERS (ONE PLACE)
 # ============================================================
@@ -34,16 +34,17 @@ CFG = dict(
     pge_layers=3,
 
     # distillation
-    epochs=500,
+    epochs=15,
     batch_size=32,
     Q=30,
     T=150,
 
     # learning rates
     lr_gnn=1e-2,
-    lr_X=0.0025,
-    lr_y=0.00025,
-    lr_mlp=1e-3,
+    lr_X=100,
+    lr_y=0.1,
+    lr_mlp=1,
+    pge_epochs=15,
 
     # loss weights
     lambda_X=0.001,
@@ -64,9 +65,9 @@ def seed_worker(worker_id):
 # 3. PATHS
 # ============================================================
 
-train_data_path = r"data\train_dataset.pt"
-test_data_path  = r"data\test_dataset_2.pt"
-save_dir = r"saved_data"
+train_data_path = "/Users/syednabhan/Documents/Graph to Scalar/Example-1/data/train_dataset.pt"
+test_data_path  = "/Users/syednabhan/Documents/Graph to Scalar/Example-1/data/test_dataset_2.pt"
+save_dir = "/Users/syednabhan/Documents/Graph to Scalar/modular_code/saved_data"
 
 os.makedirs(save_dir, exist_ok=True)
 
@@ -156,18 +157,42 @@ print("✔ Synthetic graphs initialized")
 
 mlp = PGE(
     nfeat=feat_dim,
-    nnodes=CFG["syn_nodes"],
     nhid=CFG["pge_hidden_dim"],
     nlayers=CFG["pge_layers"],
     device=device
 ).to(device)
+
+print("✔ MLP initialized")
+# ============================================================
+# 8.1. MLP Training
+# ============================================================
+optimizer = torch.optim.Adam(
+    mlp.parameters(),
+    lr=CFG["lr_mlp"],
+    weight_decay=CFG.get("pge_wd", 0.0)
+)
+
+train_pge(
+    mlp=mlp,
+    train_real=train_real,
+    optimizer=optimizer,
+    epochs=CFG["pge_epochs"],
+    device=device
+)
+
+torch.save(
+    mlp.state_dict(),
+    os.path.join(save_dir, "pge_mlp.pt")
+)
+
+print("✔ MLP Trained")
 
 gnn = GraphSAGE(
     in_dim=feat_dim,
     hidden_dim=CFG["sage_hidden_dim"]
 ).to(device)
 
-print("✔ Models initialized")
+print("✔ GNN initialized")
 
 # ============================================================
 # 9. DISTILLATION
@@ -185,7 +210,6 @@ train_syn, mlp, gnn = distill(
     lr_gnn=CFG["lr_gnn"],
     lr_X=CFG["lr_X"],
     lr_y=CFG["lr_y"],
-    lr_mlp=CFG["lr_mlp"],
     lambda_X=CFG["lambda_X"],
     lambda_Y=CFG["lambda_Y"],
     l_syn=l_syn,
@@ -202,11 +226,6 @@ print("✔ Distillation complete")
 torch.save(
     train_syn,
     os.path.join(save_dir, "train_syn_distilled.pt")
-)
-
-torch.save(
-    mlp.state_dict(),
-    os.path.join(save_dir, "pge_mlp_distilled.pt")
 )
 
 torch.save(
@@ -237,17 +256,31 @@ train_real_mse, train_preds, train_ys = evaluate(gnn_eval, train_real)
 save_scatter_preds_vs_targets(
     train_preds,
     train_ys,
-    save_path="saved_data/plots/train_real_scatter.png",
-    title="Synthetic-trained GNN on Test Data"
+    save_path="/Users/syednabhan/Documents/Graph to Scalar/modular_code/saved_data/plots/train_real_scatter.png",
+    title="Synthetic-trained GNN on Train Data"
 )
 print(f"✔ Train Real MSE (trained on synthetic data): {train_real_mse:.6f}")
+# for i in range(len(train_preds)):
+#     print(
+#         f"✔ Train Real (Predictions, Ground Truth): "
+#         f"{train_preds[i].item():.6f} --------- {train_ys[i].item():.6f}"
+#     )
+
+
 
 test_mse, test_preds, test_ys = evaluate(gnn_eval, test_data)
 save_scatter_preds_vs_targets(
     test_preds,
     test_ys,
-    save_path="saved_data/plots/test_scatter.png",
+    save_path="/Users/syednabhan/Documents/Graph to Scalar/modular_code/saved_data/plots/test_scatter.png",
     title="Synthetic-trained GNN on Test Data"
 )
 print(f"✔ Test MSE (trained on synthetic data): {test_mse:.6f}")
+# for i in range(len(test_preds)):
+#     print(
+#         f"✔ Test Real (Predictions, Ground Truth): "
+#         f"{test_preds[i].item():.6f} --------- {test_ys[i].item():.6f}"
+#     )
+
+
 
