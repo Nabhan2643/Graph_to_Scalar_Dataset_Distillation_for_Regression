@@ -10,7 +10,7 @@ import numpy as np
 
 class PGE(nn.Module):
 
-    def __init__(self, nfeat, nhid=128, nlayers=3, device=None, args=None):
+    def __init__(self, nfeat, nhid=128, nlayers=3, device=None, args=None, threshold=0.5):
         super(PGE, self).__init__()
 
         self.layers = nn.ModuleList([])
@@ -27,35 +27,60 @@ class PGE(nn.Module):
         # self.edge_index = edge_index.T
         # self.nnodes = nnodes
         self.device = device
+        self.threshold = threshold
         self.reset_parameters()
         # self.cnt = 0
         # self.args = args
         # self.nnodes = nnodes
 
-    def forward(self, x):
+    def forward(self, x, edge_index=None):
+        """
+        Forward pass: only predict on upper triangle edges.
+        Symmetry is enforced by mirroring predictions.
+        """
         nnodes = x.shape[0]
-        idx = torch.arange(nnodes, device=x.device)
-        edge_index = torch.cartesian_prod(idx, idx).T
-        edge_embed = torch.cat([x[edge_index[0]],
-                x[edge_index[1]]], axis=1)
+        
+        if edge_index is None:
+            idx = torch.arange(nnodes, device=x.device)
+            edge_index = torch.cartesian_prod(idx, idx).T
+            # Keep only upper triangle (i < j)
+            mask = edge_index[0] < edge_index[1]
+            edge_index = edge_index[:, mask]
+        
+        src, dst = edge_index[0], edge_index[1]
+        edge_embed = torch.cat([x[src], x[dst]], dim=1)
+        
         for ix, layer in enumerate(self.layers):
             edge_embed = layer(edge_embed)
             if ix != len(self.layers) - 1:
                 edge_embed = self.bns[ix](edge_embed)
                 edge_embed = F.relu(edge_embed)
-
-        adj = edge_embed.reshape(nnodes, nnodes)
-
-        adj = (adj + adj.T)/2
-        adj = torch.sigmoid(adj)
-        adj = adj - torch.diag(torch.diag(adj, 0))
-        return adj
+        
+        edge_logits = edge_embed.squeeze(-1)
+        edge_probs = torch.sigmoid(edge_logits)
+        
+        return edge_probs, edge_index
 
     @torch.no_grad()
-    def inference(self, x):
-        # self.eval()
-        adj_syn = self.forward(x)
-        return adj_syn
+    def inference(self, x, edge_index=None):
+        """
+        Inference: predict on upper triangle, then mirror to lower triangle.
+        This ensures perfect symmetry.
+        """
+        edge_probs, edge_index = self.forward(x, edge_index)
+        
+        # Filter by threshold
+        mask = edge_probs > self.threshold
+        filtered_edges = edge_index[:, mask]
+        
+        # Create symmetric edge index by adding reverse edges
+        src, dst = filtered_edges[0], filtered_edges[1]
+        reverse_edges = torch.stack([dst, src])
+        
+        # Combine upper and lower triangle
+        symmetric_edge_index = torch.cat([filtered_edges, reverse_edges], dim=1)
+        
+        return symmetric_edge_index
 
     def reset_parameters(self):
         def weight_reset(m):
@@ -87,65 +112,56 @@ class GraphSAGE(nn.Module):
                 nn.init.xavier_uniform_(m.weight)
                 nn.init.zeros_(m.bias)
 
-    def sage_layer(self, X, A, lin_self, lin_neigh):
+    def sage_layer(self, X, edge_index, lin_self, lin_neigh):
         """
-        One GraphSAGE mean-aggregation layer using sparse edge-index based aggregation.
+        One GraphSAGE mean-aggregation layer using sparse edge-index.
         
-        OPTIMIZATION: Replaced dense matrix multiplication (A @ X) with sparse aggregation
-        using scatter_add_ operations. This is crucial for scalability.
+        Args:
+            X: Node features (N, F)
+            edge_index: Edge indices (2, E) where edge_index[0] = src, edge_index[1] = dst
+            lin_self: Linear layer for self features
+            lin_neigh: Linear layer for neighbor features
         
-        Time complexity:  O(E * F) instead of O(N^2 * F) where E=edges, N=nodes, F=features
-        Space complexity: O(E) instead of O(N^2) for adjacency representation
-        
-        Example: For 100-node graphs with ~500 edges (5% density):
-        - Dense: 10,000 entries × 4 bytes = 40 KB
-        - Sparse: 500 edges × 2 indices × 8 bytes = 8 KB (80% memory savings)
-        
-        Supports both input formats:
-        - Dense adjacency matrix A: (N, N) - will be converted to edge_index internally
-        - Edge index tuple (src, dst): already sparse, processed directly
+        Returns:
+            h: Updated node features (N, F)
         """
-        # Handle both dense adjacency matrix and edge_index inputs
-        if isinstance(A, tuple):  # Edge index format (src, dst)
-            src, dst = A
-        elif hasattr(A, 'dim') and A.dim() == 2:  # Dense adjacency matrix (N, N)
-            # Extract edges from dense adjacency using nonzero
-            edge_index = A.nonzero(as_tuple=True)  # Returns (src, dst) as separate tensors
-            src, dst = edge_index
-        else:
-            raise ValueError("A must be either a dense adjacency matrix or (src, dst) edge index tuple")
-        
-        # Compute degree for each node using scatter_add_
-        # This counts in-degree for each node efficiently
+        src, dst = edge_index[0], edge_index[1]
         num_nodes = X.shape[0]
+        
+        # Compute in-degree for each node using scatter_add_
         deg = torch.zeros(num_nodes, device=X.device, dtype=X.dtype)
         deg.scatter_add_(0, src, torch.ones(src.shape[0], device=X.device, dtype=X.dtype))
-        deg = deg.clamp(min=1.0).unsqueeze(1)  # (N, 1), clamped to avoid division by zero
+        deg = deg.clamp(min=1.0).unsqueeze(1)  # (N, 1), avoid division by zero
         
-        # Sparse neighbor aggregation: sum neighbor features using scatter_add_
-        # Instead of dense matrix multiply, gather features from destinations and scatter to sources
+        # Sparse neighbor aggregation using scatter_add_
+        # Sum features from source nodes, scatter to destination nodes
         neigh_sum = torch.zeros_like(X)  # (N, F)
         neigh_sum.scatter_add_(0, src.unsqueeze(1).expand(-1, X.shape[1]), X[dst])
         
-        # Normalize by degree: divide each aggregated feature by node degree
+        # Normalize by degree
         neigh_mean = neigh_sum / deg  # (N, F)
         
-        # Apply GraphSAGE transformation: combine self and neighbor features
+        # GraphSAGE: combine self and neighbor features
         h = lin_self(X) + lin_neigh(neigh_mean)
         return F.relu(h)
 
-    def forward(self, X, A):
+    def forward(self, X, edge_index):
         """
-        X: (N, F)
-        A: (N, N)
-        returns: tensor
+        Forward pass using edge index representation.
+        
+        Args:
+            X: Node features (N, F)
+            edge_index: Edge indices (2, E)
+        
+        Returns:
+            out: Graph-level prediction (scalar)
         """
-        h = self.sage_layer(X, A, self.lin_self_1, self.lin_neigh_1)
-        h = self.sage_layer(h, A, self.lin_self_2, self.lin_neigh_2)
+        h = self.sage_layer(X, edge_index, self.lin_self_1, self.lin_neigh_1)
+        h = self.sage_layer(h, edge_index, self.lin_self_2, self.lin_neigh_2)
 
         # Graph-level pooling
         h_graph = h.mean(dim=0)  # (hidden_dim,)
 
         # Scalar output
         out = self.readout(h_graph)  # (1,)
-        return out # tensor
+        return out
