@@ -89,11 +89,48 @@ class GraphSAGE(nn.Module):
 
     def sage_layer(self, X, A, lin_self, lin_neigh):
         """
-        One GraphSAGE mean-aggregation layer
+        One GraphSAGE mean-aggregation layer using sparse edge-index based aggregation.
+        
+        OPTIMIZATION: Replaced dense matrix multiplication (A @ X) with sparse aggregation
+        using scatter_add_ operations. This is crucial for scalability.
+        
+        Time complexity:  O(E * F) instead of O(N^2 * F) where E=edges, N=nodes, F=features
+        Space complexity: O(E) instead of O(N^2) for adjacency representation
+        
+        Example: For 100-node graphs with ~500 edges (5% density):
+        - Dense: 10,000 entries × 4 bytes = 40 KB
+        - Sparse: 500 edges × 2 indices × 8 bytes = 8 KB (80% memory savings)
+        
+        Supports both input formats:
+        - Dense adjacency matrix A: (N, N) - will be converted to edge_index internally
+        - Edge index tuple (src, dst): already sparse, processed directly
         """
-        deg = A.sum(dim=1, keepdim=True).clamp(min=1.0)
-        neigh_mean = (A @ X) / deg
-
+        # Handle both dense adjacency matrix and edge_index inputs
+        if isinstance(A, tuple):  # Edge index format (src, dst)
+            src, dst = A
+        elif hasattr(A, 'dim') and A.dim() == 2:  # Dense adjacency matrix (N, N)
+            # Extract edges from dense adjacency using nonzero
+            edge_index = A.nonzero(as_tuple=True)  # Returns (src, dst) as separate tensors
+            src, dst = edge_index
+        else:
+            raise ValueError("A must be either a dense adjacency matrix or (src, dst) edge index tuple")
+        
+        # Compute degree for each node using scatter_add_
+        # This counts in-degree for each node efficiently
+        num_nodes = X.shape[0]
+        deg = torch.zeros(num_nodes, device=X.device, dtype=X.dtype)
+        deg.scatter_add_(0, src, torch.ones(src.shape[0], device=X.device, dtype=X.dtype))
+        deg = deg.clamp(min=1.0).unsqueeze(1)  # (N, 1), clamped to avoid division by zero
+        
+        # Sparse neighbor aggregation: sum neighbor features using scatter_add_
+        # Instead of dense matrix multiply, gather features from destinations and scatter to sources
+        neigh_sum = torch.zeros_like(X)  # (N, F)
+        neigh_sum.scatter_add_(0, src.unsqueeze(1).expand(-1, X.shape[1]), X[dst])
+        
+        # Normalize by degree: divide each aggregated feature by node degree
+        neigh_mean = neigh_sum / deg  # (N, F)
+        
+        # Apply GraphSAGE transformation: combine self and neighbor features
         h = lin_self(X) + lin_neigh(neigh_mean)
         return F.relu(h)
 
