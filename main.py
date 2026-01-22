@@ -9,13 +9,12 @@ import os
 import torch
 
 from evaluate import detach_syn_data, evaluate, train_gnn_on_syn
-from load_data import load_test_data, load_train_data
 from losses import l_q, l_real, l_syn
-from preprocess import preprocess_graph_list_inplace
-from utils import pyg_to_graphdata, save_scatter_preds_vs_targets
+from utils import save_scatter_preds_vs_targets
 from distill import distill
 from models import PGE, GraphSAGE
-from train_mlp import train_pge
+from prepare_data import prepare_graphdata
+from train_mlp import load_or_train_mlp
 # ============================================================
 # 1. GLOBAL CONFIG / HYPERPARAMETERS (ONE PLACE)
 # ============================================================
@@ -44,7 +43,7 @@ CFG = dict(
     lr_X=100,
     lr_y=0.1,
     lr_mlp=1,
-    pge_epochs=15,
+    pge_epochs=1,
 
     # loss weights
     lambda_X=0.001,
@@ -62,54 +61,27 @@ def seed_worker(worker_id):
     torch.manual_seed(worker_seed)
 
 # ============================================================
-# 3. PATHS
+# 3. PATHS & LOAD DATA
 # ============================================================
 
-train_data_path = "/Users/syednabhan/Documents/Graph to Scalar/Example-1/data/train_dataset.pt"
-test_data_path  = "/Users/syednabhan/Documents/Graph to Scalar/Example-1/data/test_dataset_2.pt"
-save_dir = "/Users/syednabhan/Documents/Graph to Scalar/modular_code/saved_data"
+save_dir = "saved_data"
 
 os.makedirs(save_dir, exist_ok=True)
 
 device = CFG["device"]
 
-# ============================================================
-# 4. LOAD DATA
-# ============================================================
+# Try to load precomputed GraphData
+training_graphdata_path = os.path.join(save_dir, "training_graphdata.pt")
+test_graphdata_path = os.path.join(save_dir, "test_graphdata.pt")
 
-train_pyg = load_train_data(train_data_path, device)
-test_pyg  = load_test_data(test_data_path, device)
-print("✔ Data loaded")
-
-# ============================================================
-# 5. PREPROCESS
-# ============================================================
-
-preprocess_graph_list_inplace(train_pyg, strategy="mean", device=device)
-preprocess_graph_list_inplace(test_pyg,  strategy="mean", device=device)
-print("✔ Data preprocessed")
-
-# ============================================================
-# 6. CONVERT PyG → GraphData
-# ============================================================
-
-train_real = pyg_to_graphdata(
-    train_pyg,
-    target_key=CFG["target_key"],
-    requires_grad=False
-)
-
-test_data = pyg_to_graphdata(
-    test_pyg,
-    target_key=CFG["target_key"],
-    requires_grad=False
-)
-
-# NOTE: No need to resave if already exists use that.
-torch.save(train_real, os.path.join(save_dir, "training_graphdata.pt"))
-torch.save(test_data, os.path.join(save_dir, "test_graphdata.pt"))
-
-print("✔ Converted & saved GraphData")
+if os.path.exists(training_graphdata_path) and os.path.exists(test_graphdata_path):
+    train_real = torch.load(training_graphdata_path, weights_only=False)
+    test_data = torch.load(test_graphdata_path, weights_only=False)
+    print("✔ GraphData loaded from saved files")
+else:
+    print("⚠ No precomputed GraphData exists. Please run data preparation first.")
+    train_real = None
+    test_data = None
 
 # ============================================================
 # 7. INITIALIZE SYNTHETIC DATA (SEEDED ONLY HERE)
@@ -152,40 +124,24 @@ for _ in range(CFG["syn_graphs"]):
 print("✔ Synthetic graphs initialized")
 
 # ============================================================
-# 8. INITIALIZE MODELS
+# 8. LOAD OR TRAIN MLP
 # ============================================================
 
-mlp = PGE(
-    nfeat=feat_dim,
-    nhid=CFG["pge_hidden_dim"],
-    nlayers=CFG["pge_layers"],
-    device=device
-).to(device)
-
-print("✔ MLP initialized")
-# ============================================================
-# 8.1. MLP Training
-# ============================================================
-optimizer = torch.optim.Adam(
-    mlp.parameters(),
-    lr=CFG["lr_mlp"],
-    weight_decay=CFG.get("pge_wd", 0.0)
-)
-
-train_pge(
-    mlp=mlp,
+mlp = load_or_train_mlp(
     train_real=train_real,
-    optimizer=optimizer,
-    epochs=CFG["pge_epochs"],
-    device=device
+    feat_dim=feat_dim,
+    save_dir=save_dir,
+    device=device,
+    pge_hidden_dim=CFG["pge_hidden_dim"],
+    pge_layers=CFG["pge_layers"],
+    lr_mlp=CFG["lr_mlp"],
+    pge_epochs=CFG["pge_epochs"],
+    pge_wd=CFG.get("pge_wd", 0.0)
 )
 
-torch.save(
-    mlp.state_dict(),
-    os.path.join(save_dir, "pge_mlp.pt")
-)
-
-print("✔ MLP Trained")
+# ============================================================
+# 9. INITIALIZE GNN
+# ============================================================
 
 gnn = GraphSAGE(
     in_dim=feat_dim,
@@ -195,7 +151,7 @@ gnn = GraphSAGE(
 print("✔ GNN initialized")
 
 # ============================================================
-# 9. DISTILLATION
+# 10. DISTILLATION
 # ============================================================
 
 train_syn, mlp, gnn = distill(
@@ -220,7 +176,7 @@ train_syn, mlp, gnn = distill(
 print("✔ Distillation complete")
 
 # ============================================================
-# 10. SAVE DISTILLED SYN DATA & MODELS
+# 11. SAVE DISTILLED SYN DATA & MODELS
 # ============================================================
 
 torch.save(
@@ -236,7 +192,7 @@ torch.save(
 print("✔ Distilled synthetic data and models saved")
 
 # ============================================================
-# 11. EVALUATION ON TEST DATA
+# 12. EVALUATION ON TEST DATA
 # ============================================================
 train_syn_eval = detach_syn_data(train_syn)
 
