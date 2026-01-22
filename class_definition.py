@@ -1,9 +1,9 @@
 #assumes X,A,y are pytorch tensors
 
 class GraphData:
-    def __init__(self, X, A, y, requires_grad=False):
+    def __init__(self, X, edge_index, y, requires_grad=False):
         self.X = X
-        self.A = A
+        self.edge_index = edge_index
         self.y = y
 
         if requires_grad:

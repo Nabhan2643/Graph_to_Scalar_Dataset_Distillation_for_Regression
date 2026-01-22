@@ -7,7 +7,7 @@ def evaluate(gnn, data_list):
     preds, ys = [], []
 
     for g in data_list:
-        pred = gnn(g.X, g.A)
+        pred = gnn(g.X, g.edge_index)
         preds.append(pred.item())
         ys.append(g.y.item())
 
@@ -32,7 +32,7 @@ def train_gnn_on_syn(
         for g in syn_data:
             optimizer.zero_grad()
 
-            pred = gnn(g.X, g.A)
+            pred = gnn(g.X, g.edge_index)
             loss = (pred - g.y).pow(2).mean()
 
             loss.backward()
@@ -51,7 +51,7 @@ def detach_syn_data(syn_list):
         syn_detached.append(
             GraphData(
                 X=g.X.detach().clone(),
-                A=g.A.detach().clone(),
+                edge_index=g.edge_index.detach().clone(),
                 y=g.y.detach().clone(),
                 requires_grad=False
             )

@@ -1,9 +1,6 @@
-#train_real_list and train_syn_list contain objects having X,A,y
-#access using train_real_list[i].X, train_real_list[i].A, train_real_list[i].y
+#train_real_list and train_syn_list contain objects having X, edge_index, y
+#access using train_real_list[i].X, train_real_list[i].edge_index, train_real_list[i].y
 #gnn has a method that reinitialises itself
-
-# def distill(train_real_list,train_syn_list,epochs,batch_size,mlp,Q,T,gnn,lr_gnn,lr_X,lr_y,lr_mlp,l_syn,l_q,l_real):
-#     return train_syn_list, mlp, gnn
 
 import torch
 import random
@@ -27,12 +24,16 @@ def distill(
     l_real
 ):
 
-    device = next(mlp.parameters()).device  # check again
+    device = next(mlp.parameters()).device
 
     # Ensure synthetic data is differentiable
     for g in train_syn_list:
         g.X.requires_grad_(True)
         g.y.requires_grad_(True)
+        # Move to device
+        g.X = g.X.to(device)
+        g.y = g.y.to(device)
+        g.edge_index = g.edge_index.to(device)
 
     for epoch in range(epochs):
 
@@ -42,10 +43,11 @@ def distill(
         real_batch = random.sample(train_real_list, batch_size)
 
         # --------------------------------------------------
-        # A_tilde = g_phi(X_tilde)  (FIXED in this loop)
+        # edge_index_tilde = g_phi(X_tilde)  (FIXED in this loop)
+        # Use mlp.inference() to get filtered edges above threshold
         # --------------------------------------------------
         for g in train_syn_list:
-            g.A = mlp(g.X)
+            g.edge_index = mlp.inference(g.X)
 
         # --------------------------------------------------
         # Inner-loop: Q random initialisations
@@ -54,24 +56,8 @@ def distill(
 
         for q in range(Q):
 
-            # if(q==0):
-            #     print(f"BEFORE RESET")
-            #     for name, param in gnn.named_parameters():
-            #         print(f"{name}:\n{param.data}\n")
-
-            #     print(f"--------------------------------------------------------------------------------------------------------")
-            #     print(f"--------------------------------------------------------------------------------------------------------")
-
             # Sample theta
-            gnn.reset_parameters()  # check again the name
-
-            # if(q==0):
-            #     print(f"AFTER RESET")
-            #     for name, param in gnn.named_parameters():
-            #         print(f"{name}:\n{param.data}\n")
-                
-            #     print(f"--------------------------------------------------------------------------------------------------------")
-            #     print(f"--------------------------------------------------------------------------------------------------------")  
+            gnn.reset_parameters()
 
             # ----- T steps on synthetic data -----
             for _ in range(T):
@@ -119,11 +105,6 @@ def distill(
             retain_graph=True
         )
 
-        # grad_phi = torch.autograd.grad(
-        #     L_real,
-        #     mlp.parameters()
-        # )
-
         # --------------------------------------------------
         # Updates
         # --------------------------------------------------
@@ -132,25 +113,6 @@ def distill(
                 g.X -= lr_X * gx
                 g.y -= lr_y * gy
 
-            # for p, gp in zip(mlp.parameters(), grad_phi):
-            #     p -= lr_mlp * gp
-    
-            # for p, gp in zip(mlp.parameters(), grad_phi):
-            #     if gp is not None:
-            #         p -= lr_mlp * gp
-    
-        g = train_syn_list[0]
-
-        
-        # print(f"Adjacency: {g.A}")
-        # print(f"--------------------------------------------------------------------------------------------------------")
-        # print(f"--------------------------------------------------------------------------------------------------------")
-        # print(f"Feature Matrix: {g.X}")
-        # print(f"--------------------------------------------------------------------------------------------------------")
-        # print(f"--------------------------------------------------------------------------------------------------------")
-        # print(f"label: {g.y}")
-        # print(f"--------------------------------------------------------------------------------------------------------")
-        # print(f"--------------------------------------------------------------------------------------------------------")
         print(f"Epoch {epoch} - Completed")
         print(f"--------------------------------------------------------------------------------------------------------")
         print(f"--------------------------------------------------------------------------------------------------------")

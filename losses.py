@@ -1,41 +1,41 @@
-#train_real_list and train_syn_list contain objects having X,A,y
-#access using train_real_list[i].X, train_real_list[i].A, train_real_list[i].y
+#train_real_list and train_syn_list contain objects having X, edge_index, y
+#access using train_real_list[i].X, train_real_list[i].edge_index, train_real_list[i].y
 #these are pytorch tensors 
 
 import torch
 
 def l_syn(gnn, syn_list):
-    loss = torch.tensor(0.0, device=syn_list[0].X.device) #CHECK AGAIN
+    loss = torch.tensor(0.0, device=syn_list[0].X.device)
     M = len(syn_list)
 
     for i in range(M):
         X = syn_list[i].X
-        A = syn_list[i].A
+        edge_index = syn_list[i].edge_index
         y = syn_list[i].y
 
-        y_pred = gnn(X, A)
+        y_pred = gnn(X, edge_index)
         loss += torch.mean((y_pred - y) ** 2)
 
     loss = loss / M
     return loss
 
 def l_q(gnn, real_list):
-    loss = torch.tensor(0.0, device=real_list[0].X.device) #CHECK AGAIN
+    loss = torch.tensor(0.0, device=real_list[0].X.device)
     B = len(real_list)
 
     for i in range(B):
         X = real_list[i].X
-        A = real_list[i].A
+        edge_index = real_list[i].edge_index
         y = real_list[i].y
 
-        y_pred = gnn(X, A)
+        y_pred = gnn(X, edge_index)
         loss += torch.mean((y_pred - y) ** 2)
 
     loss = loss / B
     return loss
 
 def l_real(syn_list, lambda_X, lambda_Y, l_q_list):
-    loss = torch.tensor(0.0, device=syn_list[0].X.device) #CHECK AGAIN
+    loss = torch.tensor(0.0, device=syn_list[0].X.device)
 
     # ----- average over q -----
     Q = len(l_q_list)

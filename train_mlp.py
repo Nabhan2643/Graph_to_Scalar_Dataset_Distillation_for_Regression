@@ -25,29 +25,37 @@ def train_pge(
             # --------------------------------------------------
             # Move data to device
             # --------------------------------------------------
-            x = g.X.to(device)          # (N, F)
-            adj_gt = g.A.to(device)     # (N, N)
+            x = g.X.to(device)                    # (N, F)
+            edge_index = g.edge_index.to(device)  # (2, E)
 
             # --------------------------------------------------
-            # Forward pass
+            # Forward pass: get edge probabilities and indices
             # --------------------------------------------------
-            adj_pred = mlp(x)           # (N, N), sigmoid already applied
+            # PGE.forward() generates upper triangle edges internally
+            # Returns: (edge_probs, edge_index_pred)
+            edge_probs, edge_index_pred = mlp(x)
+            
+            # edge_probs: (num_upper_edges,)
+            # edge_index_pred: (2, num_upper_edges)
 
             # --------------------------------------------------
-            # Mask: upper triangle, no diagonal
+            # Extract ground truth labels for predicted edges
             # --------------------------------------------------
-            mask = torch.triu(
-                torch.ones_like(adj_gt, dtype=torch.bool),
-                diagonal=1
-            )
+            src, dst = edge_index_pred[0], edge_index_pred[1]
+            
+            # Create adjacency matrix from ground truth edge_index
+            num_nodes = x.shape[0]
+            adj_gt = torch.zeros(num_nodes, num_nodes, device=device)
+            edge_src, edge_dst = edge_index[0], edge_index[1]
+            adj_gt[edge_src, edge_dst] = 1.0
+            
+            # Get ground truth labels for predicted edges
+            gt_labels = adj_gt[src, dst]
 
             # --------------------------------------------------
-            # Loss: BCE on edges
+            # Loss: BCE on upper triangle edges
             # --------------------------------------------------
-            loss = F.binary_cross_entropy(
-                adj_pred[mask],
-                adj_gt[mask]
-            )
+            loss = F.binary_cross_entropy(edge_probs, gt_labels)
 
             # --------------------------------------------------
             # Backprop

@@ -3,6 +3,28 @@ from class_definition import GraphData
 import matplotlib.pyplot as plt
 import os
 
+## MAKES GRAPH UNDIRECTED
+
+def _is_symmetric(edge_index):
+    """
+    Check if edge_index represents a symmetric (undirected) graph.
+    
+    Args:
+        edge_index: (2, E) tensor
+    
+    Returns:
+        bool: True if graph is symmetric
+    """
+    src, dst = edge_index
+    reverse_edges = torch.stack([dst, src])
+    
+    # Convert to set for comparison
+    edges = set(map(tuple, torch.t(edge_index).tolist()))
+    reverse = set(map(tuple, torch.t(reverse_edges).tolist()))
+    
+    return edges == reverse
+
+
 def pyg_to_graphdata( 
     pyg_graph_list,
     target_key="stiffness",
@@ -25,23 +47,23 @@ def pyg_to_graphdata(
         # Node features
         X = data.x
 
-        # Build adjacency matrix from edge_index (ignore edge_weight)
-        num_nodes = X.size(0)
-        A = torch.zeros(
-            (num_nodes, num_nodes),
-            device=X.device,
-            dtype=X.dtype
-        )
+        # Extract edge_index directly from PyG Data object
+        # PyG edge_index is already in format (2, E)
+        edge_index = data.edge_index
 
-        src, dst = data.edge_index
-        A[src, dst] = 1.0
-        A[dst, src] = 1.0  # assume undirected graph
+        # For undirected graphs, ensure symmetric edges (both directions)
+        if not _is_symmetric(edge_index):
+            src, dst = edge_index
+            reverse_edges = torch.stack([dst, src])
+            edge_index = torch.cat([edge_index, reverse_edges], dim=1)
+            # Remove duplicates if any
+            edge_index = torch.unique(edge_index, dim=1)
 
         # Graph-level target
         y = getattr(data, target_key)
 
         graphdata_list.append(
-            GraphData(X=X, A=A, y=y, requires_grad=requires_grad)
+            GraphData(X=X, edge_index=edge_index, y=y, requires_grad=requires_grad)
         )
 
     return graphdata_list
