@@ -22,10 +22,9 @@ def distill(
     lambda_Y,
     l_syn,
     l_q,
-    l_real
+    l_real,
+    device
 ):
-
-    device = next(mlp.parameters()).device
 
     # Ensure synthetic data is differentiable
     for g in train_syn_list:
