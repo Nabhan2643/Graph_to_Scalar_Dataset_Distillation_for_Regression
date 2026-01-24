@@ -18,18 +18,46 @@ def preprocess_features(X, strategy='mean', scaler=None, device = "cpu"):
     return torch.tensor(X_scaled, dtype=torch.float32, device=device), scaler
 
 
+# def preprocess_graph_list_inplace(graph_list, strategy='mean', device='cpu'):
+    
+#     x_all = torch.cat([g.x.to(device) for g in graph_list], dim=0)
+
+#     # 1) Preprocess node features (returns X_proc of same shape, plus scaler)
+#     X_proc, x_scaler = preprocess_features(x_all, strategy=strategy, device=device)
+
+#     # 2) Write back into each graph x, leave edge_weight alone
+#     offset = 0
+#     for g in graph_list:
+#         n_nodes = g.x.size(0)
+#         g.x = X_proc[offset : offset + n_nodes]
+#         offset += n_nodes
+
+#     return x_scaler
 def preprocess_graph_list_inplace(graph_list, strategy='mean', device='cpu'):
     
+    # Concatenate all node features
     x_all = torch.cat([g.x.to(device) for g in graph_list], dim=0)
 
-    # 1) Preprocess node features (returns X_proc of same shape, plus scaler)
-    X_proc, x_scaler = preprocess_features(x_all, strategy=strategy, device=device)
+    # 1) Preprocess node features
+    X_proc, x_scaler = preprocess_features(
+        x_all, strategy=strategy, device=device
+    )
 
-    # 2) Write back into each graph x, leave edge_weight alone
+    # 2) Write back processed features and move other tensors
     offset = 0
     for g in graph_list:
         n_nodes = g.x.size(0)
-        g.x = X_proc[offset : offset + n_nodes]
+
+        # update node features
+        g.x = X_proc[offset: offset + n_nodes]
+
+        # move labels and edge index to device
+        if hasattr(g, 'y') and g.y is not None:
+            g.y = g.y.to(device)
+
+        if hasattr(g, 'edge_index') and g.edge_index is not None:
+            g.edge_index = g.edge_index.to(device)
+
         offset += n_nodes
 
     return x_scaler

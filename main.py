@@ -20,7 +20,7 @@ from train_mlp import load_or_train_mlp
 # ============================================================
 
 CFG = dict(
-    device="cpu",
+    device="cuda",
 
     # data
     target_key="stiffness",
@@ -76,8 +76,17 @@ training_graphdata_path = os.path.join(save_dir, "training_graphdata.pt")
 test_graphdata_path = os.path.join(save_dir, "test_graphdata.pt")
 
 if os.path.exists(training_graphdata_path) and os.path.exists(test_graphdata_path):
-    train_real = torch.load(training_graphdata_path, weights_only=False)
-    test_data = torch.load(test_graphdata_path, weights_only=False)
+    train_real = torch.load(
+        training_graphdata_path,
+        map_location=device,
+        weights_only=False
+    )
+
+    test_data = torch.load(
+        test_graphdata_path,
+        map_location=device,
+        weights_only=False
+    )
     print("✔ GraphData loaded from saved files")
 else:
     print("⚠ No precomputed GraphData exists. Please run data preparation first.")
@@ -177,7 +186,8 @@ train_syn, mlp, gnn = distill(
     lambda_Y=CFG["lambda_Y"],
     l_syn=l_syn,
     l_q=l_q,
-    l_real=l_real
+    l_real=l_real,
+    device=device
 )
 
 print("✔ Distillation complete")

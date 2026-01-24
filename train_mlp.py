@@ -214,7 +214,7 @@ if __name__ == "__main__":
     # ============================================================
     
     CFG = dict(
-        device="cpu",
+        device="cuda",
         target_key="stiffness",
         pge_hidden_dim=128,
         pge_layers=3,

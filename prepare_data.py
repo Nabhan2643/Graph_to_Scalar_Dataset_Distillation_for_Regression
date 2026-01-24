@@ -44,8 +44,8 @@ def prepare_graphdata(
     # 4. LOAD DATA
     # ============================================================
     
-    train_pyg = load_train_data(train_data_path, device)
-    test_pyg = load_test_data(test_data_path, device)
+    train_pyg = load_train_data(train_data_path, 'cpu')
+    test_pyg = load_test_data(test_data_path, 'cpu')
     print("✔ Data loaded")
     
     # ============================================================
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     # ============================================================
     
     CFG = dict(
-        device="cpu",
+        device="cuda",
         target_key="stiffness",
         seed=42
     )
