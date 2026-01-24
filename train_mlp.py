@@ -8,6 +8,7 @@ import torch
 from models import PGE
 import torch
 import torch.nn.functional as F
+import time
 
 def train_pge(
     mlp,
@@ -19,6 +20,7 @@ def train_pge(
     mlp.train()
 
     for epoch in range(epochs):
+        epoch_start_time = time.time()
         total_loss = 0.0
 
         for g in train_real:
@@ -66,8 +68,9 @@ def train_pge(
 
             total_loss += loss.item()
 
+        epoch_elapsed_time = time.time() - epoch_start_time
         avg_loss = total_loss / len(train_real)
-        print(f"[Epoch {epoch+1:03d}] PGE Loss: {avg_loss:.6f}")
+        print(f"[Epoch {epoch+1:03d}] PGE Loss: {avg_loss:.6f} | Time: {epoch_elapsed_time:.2f}s")
 
 
 def train_and_save_mlp(

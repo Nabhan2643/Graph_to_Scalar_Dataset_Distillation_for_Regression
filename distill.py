@@ -4,6 +4,7 @@
 
 import torch
 import random
+import time
 
 def distill(
     train_real_list,
@@ -36,6 +37,7 @@ def distill(
         g.edge_index = g.edge_index.to(device)
 
     for epoch in range(epochs):
+        epoch_start_time = time.time()
 
         # --------------------------------------------------
         # Sample real batch B
@@ -113,10 +115,10 @@ def distill(
                 g.X -= lr_X * gx
                 g.y -= lr_y * gy
 
-        print(f"Epoch {epoch} - Completed")
-        print(f"--------------------------------------------------------------------------------------------------------")
-        print(f"--------------------------------------------------------------------------------------------------------")
-        print(f"--------------------------------------------------------------------------------------------------------")
+        # Calculate elapsed time for epoch
+        epoch_elapsed_time = time.time() - epoch_start_time
+
+        print(f"Epoch {epoch + 1}/{epochs} - Completed in {epoch_elapsed_time:.2f}s")
         print(f"--------------------------------------------------------------------------------------------------------")
 
     return train_syn_list, mlp, gnn
