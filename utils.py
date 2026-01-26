@@ -1,5 +1,5 @@
 import torch
-from class_definition import GraphData
+from class_definition import BatchedGraphData, GraphData
 import matplotlib.pyplot as plt
 import os
 
@@ -67,6 +67,58 @@ def pyg_to_graphdata(
         )
 
     return graphdata_list
+
+
+def batch_real_data(real_list, batch_size, shuffle=True, seed=None):
+    """
+    Create batches of real graphs using BatchedGraphData.
+    
+    Shuffles the real data before batching and returns a list of 
+    disconnected batched graphs (each batch is independent).
+    
+    Args:
+        real_list: List of GraphData objects
+        batch_size: Number of graphs per batch
+        shuffle: Whether to shuffle before batching (default: True)
+        seed: Random seed for reproducibility (optional)
+    
+    Returns:
+        batches: List of BatchedGraphData objects, one per batch
+        num_batches: Number of batches created
+    
+    Example:
+        batches, num_batches = batch_real_data(train_real, batch_size=32, seed=42)
+        for batch in batches:
+            y_pred = gnn(batch.X, batch.edge_index, batch.batch)
+    """
+    
+    # Shuffle if requested
+    if shuffle:
+        if seed is not None:
+            torch.manual_seed(seed)
+        indices = torch.randperm(len(real_list)).tolist()
+        shuffled_list = [real_list[i] for i in indices]
+    else:
+        shuffled_list = real_list
+    
+    # Create batches
+    batches = []
+    num_full_batches = len(shuffled_list) // batch_size
+    
+    for i in range(num_full_batches):
+        start_idx = i * batch_size
+        end_idx = start_idx + batch_size
+        batch_graphs = shuffled_list[start_idx:end_idx]
+        
+        batches.append(BatchedGraphData(batch_graphs, requires_grad=False))
+    
+    # Handle remainder graphs (if any)
+    remainder = len(shuffled_list) % batch_size
+    if remainder > 0:
+        batches.append(BatchedGraphData(shuffled_list[-remainder:], requires_grad=False))
+    
+    return batches, len(batches)
+
 
 def save_scatter_preds_vs_targets(
     preds: torch.Tensor,

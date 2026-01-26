@@ -1,16 +1,11 @@
-#train_real_list and train_syn_list contain objects having X, edge_index, y
-#access using train_real_list[i].X, train_real_list[i].edge_index, train_real_list[i].y
 #gnn has a method that reinitialises itself
-
 import torch
-import random
 import time
 
 def distill(
-    train_real_list,
+    real_batches,
     train_syn_list,
     epochs,
-    batch_size,
     mlp,        # g_phi
     Q,
     T,
@@ -25,6 +20,32 @@ def distill(
     l_real,
     device
 ):
+    """
+    Distillation loop for graph neural network dataset distillation.
+    
+    Args:
+        real_batches: List of BatchedGraphData objects (pre-created by batch_real_data)
+        train_syn_list: List of GraphData objects (synthetic graphs to distill)
+        epochs: Number of distillation epochs
+        mlp: PGE model for edge generation
+        Q: Number of random GNN initializations per epoch
+        T: Number of training steps on synthetic data per initialization
+        gnn: GraphSAGE model
+        lr_gnn: Learning rate for GNN parameter updates
+        lr_X: Learning rate for synthetic node features
+        lr_y: Learning rate for synthetic targets
+        lambda_X: Regularization weight for node features
+        lambda_Y: Regularization weight for targets
+        l_syn: Loss function for synthetic data
+        l_q: Loss function for real data
+        l_real: Meta-loss function
+        device: Torch device
+    
+    Returns:
+        train_syn_list: Updated synthetic graphs
+        mlp: Updated PGE model
+        gnn: Updated GNN model
+    """
 
     # Ensure synthetic data is differentiable
     for g in train_syn_list:
@@ -35,13 +56,16 @@ def distill(
         g.y = g.y.to(device)
         g.edge_index = g.edge_index.to(device)
 
+    num_batches = len(real_batches)
+
     for epoch in range(epochs):
         epoch_start_time = time.time()
 
         # --------------------------------------------------
-        # Sample real batch B
+        # Cycle through real batches
         # --------------------------------------------------
-        real_batch = random.sample(train_real_list, batch_size)
+        batch_idx = epoch % num_batches
+        real_batch = real_batches[batch_idx]
 
         # --------------------------------------------------
         # edge_index_tilde = g_phi(X_tilde)  (FIXED in this loop)
@@ -117,8 +141,7 @@ def distill(
         # Calculate elapsed time for epoch
         epoch_elapsed_time = time.time() - epoch_start_time
 
-        print(f"Epoch {epoch + 1}/{epochs} - Completed in {epoch_elapsed_time:.2f}s")
+        print(f"Epoch {epoch + 1}/{epochs} - Batch {batch_idx + 1}/{num_batches} - Completed in {epoch_elapsed_time:.2f}s")
         print(f"--------------------------------------------------------------------------------------------------------")
 
     return train_syn_list, mlp, gnn
-

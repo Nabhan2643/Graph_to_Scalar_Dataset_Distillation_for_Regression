@@ -10,7 +10,7 @@ import torch
 
 from evaluate import detach_syn_data, evaluate, train_gnn_on_syn
 from losses import l_q, l_real, l_syn
-from utils import save_scatter_preds_vs_targets
+from utils import save_scatter_preds_vs_targets, batch_real_data
 from distill import distill
 from models import PGE, GraphSAGE
 from prepare_data import prepare_graphdata
@@ -65,7 +65,7 @@ def seed_worker(worker_id):
 # 3. PATHS & LOAD DATA
 # ============================================================
 
-save_dir = "saved_data"
+save_dir = "/Users/syednabhan/Documents/Graph to Scalar/modular_code/saved_data"
 
 os.makedirs(save_dir, exist_ok=True)
 
@@ -170,11 +170,19 @@ print("✔ GNN initialized")
 # 10. DISTILLATION
 # ============================================================
 
+# Create batches before distillation
+real_batches, num_batches = batch_real_data(
+    train_real,
+    batch_size=CFG["batch_size"],
+    shuffle=True,
+    seed=CFG["seed"]
+)
+
+# Pass batches to distill
 train_syn, mlp, gnn = distill(
-    train_real_list=train_real,
+    real_batches=real_batches,      # NEW: pre-batched data
     train_syn_list=train_syn,
     epochs=CFG["epochs"],
-    batch_size=CFG["batch_size"],
     mlp=mlp,
     Q=CFG["Q"],
     T=CFG["T"],
@@ -189,7 +197,6 @@ train_syn, mlp, gnn = distill(
     l_real=l_real,
     device=device
 )
-
 print("✔ Distillation complete")
 
 # ============================================================
