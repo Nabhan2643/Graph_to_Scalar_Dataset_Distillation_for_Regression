@@ -20,7 +20,7 @@ from train_mlp import load_or_train_mlp
 # ============================================================
 
 CFG = dict(
-    device="cuda",
+    device="cpu",
 
     # data
     target_key="stiffness",

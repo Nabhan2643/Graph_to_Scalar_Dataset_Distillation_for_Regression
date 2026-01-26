@@ -87,7 +87,7 @@ if __name__ == "__main__":
     # ============================================================
     
     CFG = dict(
-        device="cuda",
+        device="cpu",
         target_key="stiffness",
         seed=42
     )

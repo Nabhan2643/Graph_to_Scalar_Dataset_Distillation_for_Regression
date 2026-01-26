@@ -3,35 +3,54 @@
 #these are pytorch tensors 
 
 import torch
+from class_definition import BatchedGraphData
+
+def _to_batched(data):
+    """Convert list to BatchedGraphData if not already batched."""
+    if isinstance(data, BatchedGraphData):
+        return data
+    return BatchedGraphData(data)
 
 def l_syn(gnn, syn_list):
-    loss = torch.tensor(0.0, device=syn_list[0].X.device)
-    M = len(syn_list)
-
-    for i in range(M):
-        X = syn_list[i].X
-        edge_index = syn_list[i].edge_index
-        y = syn_list[i].y
-
-        y_pred = gnn(X, edge_index)
-        loss += torch.mean((y_pred - y) ** 2)
-
-    loss = loss / M
+    """
+    Compute loss on synthetic data.
+    
+    Args:
+        gnn: Graph neural network model
+        syn_list: List of GraphData objects OR BatchedGraphData
+    
+    Returns:
+        Mean squared error loss (scalar)
+    """
+    batched = _to_batched(syn_list)
+    
+    y_pred = gnn(batched.X, batched.edge_index, batch=batched.batch)
+    if isinstance(y_pred, tuple):
+        y_pred = y_pred[0]
+    
+    y_pred = y_pred.view(-1)
+    loss = torch.mean((y_pred - batched.y) ** 2)
     return loss
 
 def l_q(gnn, real_list):
-    loss = torch.tensor(0.0, device=real_list[0].X.device)
-    B = len(real_list)
-
-    for i in range(B):
-        X = real_list[i].X
-        edge_index = real_list[i].edge_index
-        y = real_list[i].y
-
-        y_pred = gnn(X, edge_index)
-        loss += torch.mean((y_pred - y) ** 2)
-
-    loss = loss / B
+    """
+    Compute loss on real data.
+    
+    Args:
+        gnn: Graph neural network model
+        real_list: List of GraphData objects OR BatchedGraphData
+    
+    Returns:
+        Mean squared error loss (scalar)
+    """
+    batched = _to_batched(real_list)
+    
+    y_pred = gnn(batched.X, batched.edge_index, batch=batched.batch)
+    if isinstance(y_pred, tuple):
+        y_pred = y_pred[0]
+    
+    y_pred = y_pred.view(-1)
+    loss = torch.mean((y_pred - batched.y) ** 2)
     return loss
 
 def l_real(syn_list, lambda_X, lambda_Y, l_q_list):

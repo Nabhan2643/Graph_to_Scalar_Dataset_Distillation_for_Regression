@@ -145,23 +145,41 @@ class GraphSAGE(nn.Module):
         h = lin_self(X) + lin_neigh(neigh_mean)
         return F.relu(h)
 
-    def forward(self, X, edge_index):
+    def forward(self, X, edge_index, batch=None):
         """
         Forward pass using edge index representation.
         
         Args:
             X: Node features (N, F)
             edge_index: Edge indices (2, E)
+            batch: Optional batch vector (N,) with graph indices for each node
         
         Returns:
-            out: Graph-level prediction (scalar)
+            out: Graph-level prediction(s). Scalar if single graph, vector if batched.
         """
         h = self.sage_layer(X, edge_index, self.lin_self_1, self.lin_neigh_1)
         h = self.sage_layer(h, edge_index, self.lin_self_2, self.lin_neigh_2)
 
-        # Graph-level pooling
-        h_graph = h.mean(dim=0)  # (hidden_dim,)
+        # If no batch vector provided, keep old behavior (single-graph)
+        if batch is None:
+            h_graph = h.mean(dim=0)  # (hidden_dim,)
+            out = self.readout(h_graph)  # (1,)
+            return out.squeeze(-1)  # scalar
 
-        # Scalar output
-        out = self.readout(h_graph)  # (1,)
-        return out
+        # Batched graphs: compute per-graph mean pooling using scatter_add_
+        num_graphs = int(batch.max().item()) + 1
+
+        # Sum node features per graph
+        h_sum = torch.zeros((num_graphs, h.size(1)), device=h.device, dtype=h.dtype)
+        h_sum.scatter_add_(0, batch.unsqueeze(1).expand(-1, h.size(1)), h)
+
+        # Count nodes per graph
+        counts = torch.zeros((num_graphs,), device=h.device, dtype=h.dtype)
+        counts.scatter_add_(0, batch, torch.ones(batch.size(0), device=h.device, dtype=h.dtype))
+        counts = counts.clamp(min=1.0).unsqueeze(1)
+
+        h_mean = h_sum / counts  # (num_graphs, hidden_dim)
+
+        # Graph-level readout for each graph
+        out = self.readout(h_mean)  # (num_graphs, 1)
+        return out.squeeze(-1)  # (num_graphs,)
